@@ -10,7 +10,7 @@ esphome:
   # comment: smart-plug-01
   project:
     name: mz.plug
-    version: 1.2.5
+    version: 1.2.6
 
 dashboard_import:
   package_import_url: github://mzcabc/esphome/plug-esp32-c3.yml@main
