@@ -2,7 +2,7 @@ substitutions:
   name: "plug"
   friendly_name: "Plug"
   auther: "mz"
-  version: 1.2.2
+  version: 1.2.3
 
 esphome:
   name: ${name}
