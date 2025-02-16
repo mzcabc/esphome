@@ -13,6 +13,10 @@ esphome:
   project:
     name: ${auther}.${name}
     version: ${version}
+
+dashboard_import:
+  package_import_url: github://mzcabc/esphome/plug-esp32-c3.yml@main
+
 preferences:
   flash_write_interval: 10min
 esp32:
