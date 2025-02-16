@@ -1,7 +1,6 @@
 substitutions:
   name: "plug"
   friendly_name: "Plug"
-  auther: "mz"
 
 esphome:
   name: ${name}
@@ -10,7 +9,7 @@ esphome:
   #friendly_name: "智能插座"
   # comment: smart-plug-01
   project:
-    name: ${auther}.${name}
+    name: mz.plug
     version: 1.2.5
 
 dashboard_import:
