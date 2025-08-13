@@ -1,0 +1,309 @@
+substitutions:
+  name: "plug"
+  friendly_name: "Plug"
+
+esphome:
+  name: ${name}
+  name_add_mac_suffix: true
+  friendly_name: ${friendly_name}
+  #friendly_name: "智能插座"
+  # comment: smart-plug-01
+  project:
+    name: mz.plugv2
+    version: 1.2.6
+
+dashboard_import:
+  package_import_url: github://mzcabc/esphome/plug-esp32-c3_v2.yml@main
+  import_full_config: true
+
+preferences:
+  flash_write_interval: 10min
+esp32:
+  board: esp32-c3-devkitm-1
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  on_client_connected:
+    - logger.log:
+        format: Client %s connected to API with IP %s
+        args: [client_info.c_str(), client_address.c_str()]
+    - if:
+        condition:
+          binary_sensor.is_on: relay_status
+        then:
+          - logger.log: Power is ON!
+          - light.turn_on: stat_led
+          - delay: 2s
+        else:
+          - logger.log: Power is OFF!
+          - light.turn_off: stat_led
+ota:
+  - platform: esphome
+wifi:
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    password: ""
+captive_portal:
+globals:
+   - id: energy_
+     type: float
+     restore_value: yes
+   - id: energy_last  #energy from last power cycle
+     type: float
+     restore_value: yes
+web_server:
+  port: 80
+  version: 3
+  sorting_groups:
+    - id: Sensor
+      name: Sensor
+      sorting_weight: 20
+    - id: Control
+      name: Control
+      sorting_weight: 30
+    - id: statistics
+      name: Energy Statistics
+      sorting_weight: 40
+    - id: miscellaneous
+      name: Miscellaneous
+      sorting_weight: 50  
+    - id: diagnostic
+      name: Diagnostic
+      sorting_weight: 60  
+external_components:
+  - source: github://dentra/esphome-components
+uart:
+  id: uart_bus
+  tx_pin: 3
+  rx_pin: 2
+  baud_rate: 4800
+  stop_bits: 1
+  rx_buffer_size: 512
+sensor:
+  - platform: bl0942
+    uart_id: uart_bus
+    reset: false
+    voltage_reference: 15813.4320867
+    current_reference: 254901.6402167
+    voltage:
+      name: voltage
+      accuracy_decimals: 2
+      id: voltage
+      web_server:
+        sorting_group_id: Sensor
+    current:
+      name: current
+      accuracy_decimals: 2
+      id: current
+      web_server:
+        sorting_group_id: Sensor
+    power:
+      name: power
+      id: power
+      accuracy_decimals: 2
+      filters:
+        multiply: -1
+      web_server:
+        sorting_group_id: Sensor
+    energy:
+      name: energy
+      accuracy_decimals: 2
+      internal: True
+      id: energy
+      on_value: 
+        then:
+          - if:
+              condition:
+                sensor.in_range: 
+                  id: energy
+                  above: 0.01
+              then: 
+                globals.set: 
+                  id: energy_
+                  value: !lambda return id(energy_last) + x;
+              else:
+                - globals.set: 
+                    id: energy_last
+                    value: !lambda return id(energy_);
+      
+    frequency:
+      name: frequency
+      accuracy_decimals: 2
+      id: frequency
+      web_server:
+        sorting_group_id: Sensor
+    update_interval: 10s
+
+  - platform: template
+    name: Total Energy
+    id: total_energy
+    unit_of_measurement: kWh
+    device_class: energy
+    state_class: total_increasing
+    accuracy_decimals: 2
+    lambda: |-
+      return id(energy_);
+    update_interval: 10s
+    web_server:
+        sorting_group_id: Sensor
+  - platform: energy_statistics
+    total: total_energy
+    energy_today:
+      name: Energy Today
+      web_server:
+        sorting_group_id: statistics
+    energy_yesterday:
+      name: Energy Yesterday
+      web_server:
+        sorting_group_id: statistics
+    energy_week:
+      name: Energy Week
+      web_server:
+        sorting_group_id: statistics
+    energy_month:
+      name: Energy Month
+      web_server:
+        sorting_group_id: statistics
+
+  - platform: wifi_signal # Reports the WiFi signal strength/RSSI in dB
+    name: WiFi Signal dB
+    id: wifi_signal_db
+    update_interval: 60s
+    entity_category: diagnostic
+
+  - platform: copy # Reports the WiFi signal strength in %
+    source_id: wifi_signal_db
+    name: WiFi Signal Percent
+    filters:
+    - lambda: return min(max(2 * (x + 100.0), 0.0), 100.0);
+    unit_of_measurement: '%'
+    entity_category: diagnostic
+
+time:
+  - platform: sntp
+    id: my_time
+
+switch:
+  # 电源继电器_开
+  - platform: gpio
+    name: Power_Switch_on
+    id: relay_on
+    pin: 0
+    interlock: relay_off #互锁
+    disabled_by_default: true #不显示UI
+    on_turn_on:
+    - delay: 500ms
+    - switch.turn_off: relay_on
+    web_server:
+        sorting_group_id: Control
+  # 电源继电器_关
+  - platform: gpio
+    name: Power_Switch_off
+    id: relay_off
+    interlock: relay_on #互锁
+    pin: 1
+    disabled_by_default: true #不显示UI
+    on_turn_on:
+    - delay: 500ms
+    - switch.turn_off: relay_off
+    web_server:
+        sorting_group_id: Control
+  # 电源继电器_开关
+  - platform: template
+    name: Power Switch
+    id: relay
+    restore_mode: disabled
+    lambda: |-
+      if (id(relay_status).state) {
+        return true;
+      } else {
+        return false;
+      }
+    turn_on_action:
+      - switch.turn_on: relay_on
+    turn_off_action:
+      - switch.turn_on: relay_off
+    web_server:
+        sorting_group_id: Control
+  - platform: restart
+    name: controller Restart
+    web_server:
+      sorting_group_id: miscellaneous
+  - platform: factory_reset
+    name: Restart with Factory Default Settings
+    disabled_by_default: true
+    web_server:
+      sorting_group_id: miscellaneous
+
+binary_sensor:
+  # 电源状态(继电器状态，检测继电器输出是否有电)
+  - platform: gpio
+    pin: 
+      number: 7
+      inverted: true
+      mode:
+        input: true
+        pullup: True
+    id: relay_status
+    name: relay_status
+    device_class: power
+    on_press:
+      then:
+        - light.turn_on: stat_led
+    on_release:
+      then:
+        - light.turn_off: stat_led
+    web_server:
+      sorting_group_id: miscellaneous
+  - platform: gpio
+    name: button1
+    pin: 
+      number: 6
+      inverted: true
+      mode:
+        input: true
+        pullup: True
+    on_click:
+      then:
+        - switch.toggle: relay
+    web_server:
+      sorting_group_id: miscellaneous
+light:
+  - platform: status_led
+    name: status_led
+    id: stat_led
+    pin: 5
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: IP Address
+      web_server:
+        sorting_group_id: diagnostic
+    ssid:
+      name: Connected SSID
+      web_server:
+        sorting_group_id: diagnostic
+    bssid:
+      name: Connected BSSID
+      web_server:
+        sorting_group_id: diagnostic
+    mac_address:
+      name: Mac Wifi Address
+      web_server:
+        sorting_group_id: diagnostic
+    # scan_results:
+    #   name: Latest Scan Results
+    dns_address:
+      name: DNS Address
+      web_server:
+        sorting_group_id: diagnostic
+  - platform: version
+    name: ESPHome Version
+    web_server:
+        sorting_group_id: diagnostic
+    
